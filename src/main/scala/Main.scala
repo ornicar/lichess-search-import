@@ -109,7 +109,7 @@ object Main extends App {
           .map {
             case Game.WithAnalysed(g, a) => g.id -> search.toDoc(g, a)
           }
-          .grouped(1000)
+          .grouped(500)
           .map(jsonBatch)
           .runWith(httpSink) andThen {
             case state =>
