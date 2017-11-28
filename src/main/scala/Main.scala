@@ -98,7 +98,7 @@ object Main extends App {
 
         val httpSink: Sink[JsObject, Future[Unit]] =
           Sink.foldAsync(()) {
-            case (_, obj) => retry(search.store(obj), 2 minutes, 10)
+            case (_, obj) => retry(search.store(obj), 10 seconds, 20)
           }
 
         gameSource
