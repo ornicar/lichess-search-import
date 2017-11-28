@@ -68,15 +68,26 @@ object Main extends App {
         parseDate("2011-01-01").get
     }
 
+    /**
+     * Given an operation that produces a T, returns a Future containing the result of T, unless an exception is thrown,
+     * in which case the operation will be retried after _delay_ time, if there are more possible retries, which is configured through
+     * the _retries_ parameter. If the operation does not succeed and there is no retries left, the resulting Future will contain the last failure.
+     */
+    def retry[T](op: => T, delay: FiniteDuration, retries: Int): Future[T] =
+      Future(op) recoverWith {
+        case _ if retries > 0 =>
+          akka.pattern.after(delay, system.scheduler)(retry(op, delay, retries - 1))
+      }
+
     DB.get foreach {
       case (db, dbClose) =>
 
         val gameSource = db.gameColl
           .find(BSONDocument("ca" -> BSONDocument("$gt" -> since)))
           .sort(BSONDocument("ca" -> 1))
-          .cursor[Game.WithAnalysed](readPreference =  ReadPreference.secondaryPreferred)
+          .cursor[Game.WithAnalysed](readPreference = ReadPreference.secondaryPreferred)
           .documentSource(maxDocs = Int.MaxValue)
-          // .documentSource(maxDocs = 100000)
+        // .documentSource(maxDocs = 100000)
 
         val tickSource =
           Source.tick(Reporter.freq, Reporter.freq, None)
