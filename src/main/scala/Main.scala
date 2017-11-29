@@ -96,11 +96,6 @@ object Main extends App {
           case (id, doc) => id -> JsString(Json.stringify(doc))
         })
 
-        val httpSink: Sink[JsObject, Future[Unit]] =
-          Sink.foldAsync(()) {
-            case (_, obj) => retry(search.store(obj), 10 seconds, 20)
-          }
-
         gameSource
           .buffer(10000, OverflowStrategy.backpressure)
           .map(g => Some(g))
@@ -109,9 +104,13 @@ object Main extends App {
           .map {
             case Game.WithAnalysed(g, a) => g.id -> search.toDoc(g, a)
           }
-          .grouped(1500)
+          .grouped(1000)
           .map(jsonBatch)
-          .runWith(httpSink) andThen {
+          .async
+          .mapAsyncUnordered(2) { batch =>
+            retry(search.store(batch), 10 seconds, 20)
+          }
+          .runWith(Sink.ignore) andThen {
             case state =>
               search.refresh map { _ =>
                 dbClose()
