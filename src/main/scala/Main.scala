@@ -75,7 +75,8 @@ object Main extends App {
      */
     def retry[T](op: => Future[T], delay: FiniteDuration, retries: Int): Future[T] =
       op recoverWith {
-        case _ if retries > 0 =>
+        case e if retries > 0 =>
+          println(e.getMessage)
           akka.pattern.after(delay, system.scheduler)(retry(op, delay, retries - 1))
       }
 
@@ -98,7 +99,7 @@ object Main extends App {
           .merge(tickSource, eagerComplete = true)
           .via(Reporter)
           .grouped(1000)
-          .mapAsyncUnordered(4) { games =>
+          .mapAsyncUnordered(6) { games =>
             val payload = JsObject(games map {
               case Game.WithAnalysed(g, a) => g.id -> JsString(Json.stringify(search.toDoc(g, a)))
             })
