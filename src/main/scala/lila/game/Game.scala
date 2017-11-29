@@ -16,18 +16,13 @@ case class Game(
     id: String,
     whitePlayer: Player,
     blackPlayer: Player,
-    binaryPgn: ByteArray,
     status: Status,
     turns: Int, // = ply
     startedAtTurn: Int,
     clock: Option[Clock] = None,
     daysPerTurn: Option[Int],
-    checkCount: CheckCount = CheckCount(0, 0),
-    binaryMoveTimes: Option[ByteArray] = None,
-    clockHistory: Option[ClockHistory] = Option(ClockHistory()),
     mode: Mode = Mode.default,
     variant: Variant = Variant.default,
-    crazyData: Option[Crazyhouse.Data] = None,
     createdAt: DateTime = DateTime.now,
     movedAt: DateTime = DateTime.now,
     metadata: Metadata
@@ -69,81 +64,12 @@ case class Game(
 
   def flagged = if (status == Status.Outoftime) Some(turnColor) else None
 
-  def tournamentId = metadata.tournamentId
-  def simulId = metadata.simulId
-
-  def isTournament = tournamentId.isDefined
-  def isSimul = simulId.isDefined
-  def isMandatory = isTournament || isSimul
-  def nonMandatory = !isMandatory
-
-  def hasChat = !isTournament && !isSimul && nonAi
-
-  def everyOther[A](l: List[A]): List[A] = l match {
-    case a :: b :: tail => a :: everyOther(tail)
-    case _ => l
-  }
-
-  def moveTimes(color: Color): Option[List[Centis]] = {
-    for {
-      clk <- clock
-      inc = clk.incrementOf(color)
-      history <- clockHistory
-      clocks = history(color)
-    } yield Centis(0) :: {
-      val pairs = clocks.iterator zip clocks.iterator.drop(1)
-
-      // We need to determine if this color's last clock had inc applied.
-      // if finished and history.size == playedTurns then game was ended
-      // by a players move, such as with mate or autodraw. In this case,
-      // the last move of the game, and the only one without inc, is the
-      // last entry of the clock history for !turnColor.
-      //
-      // On the other hand, if history.size is more than playedTurns,
-      // then the game ended during a players turn by async event, and
-      // the last recorded time is in the history for turnColor.
-      val noLastInc = finished && (history.size <= playedTurns) == (color != turnColor)
-
-      pairs map {
-        case (first, second) => {
-          val d = first - second
-          if (pairs.hasNext || !noLastInc) d + inc else d
-        } nonNeg
-      } toList
-    }
-  } orElse binaryMoveTimes.map { binary =>
-    // TODO: make movetime.read return List after writes are disabled.
-    val base = BinaryFormat.moveTime.read(binary, playedTurns)
-    val mts = if (color == startColor) base else base.drop(1)
-    everyOther(mts.toList)
-  }
-
-  def moveTimes: Option[Vector[Centis]] = for {
-    a <- moveTimes(startColor)
-    b <- moveTimes(!startColor)
-  } yield Sequence.interleave(a, b)
-
-  def bothClockStates: Option[Vector[Centis]] = clockHistory.map(_ bothClockStates startColor)
-
   // we can't rely on the clock,
   // because if moretime was given,
   // elapsed time is no longer representing the game duration
   def durationSeconds: Option[Int] = (movedAt.getMillis / 1000 - createdAt.getMillis / 1000) match {
     case seconds if seconds > 60 * 60 * 12 => None // no way it lasted more than 12 hours, come on.
     case seconds => Some(seconds.toInt)
-  }
-
-  lazy val pgnMoves: PgnMoves = BinaryFormat.pgn read binaryPgn
-
-  lazy val opening: Option[FullOpening.AtPly] =
-    if (fromPosition || !Variant.openingSensibleVariants(variant)) None
-    else FullOpeningDB search pgnMoves
-
-  def pgnMoves(color: Color): PgnMoves = {
-    val pivot = if (color == startColor) 0 else 1
-    pgnMoves.zipWithIndex.collect {
-      case (e, i) if (i % 2) == pivot => e
-    }
   }
 
   def correspondenceClock: Option[CorrespondenceClock] = daysPerTurn map { days =>
@@ -199,11 +125,6 @@ case class Game(
 
   def boosted = rated && finished && bothPlayersHaveMoved && playedTurns < 10
 
-  def abortable = status == Status.Started && playedTurns < 2 && nonMandatory
-
-  def resignable = playable && !abortable
-  def drawable = playable && !abortable
-
   def rated = mode.rated
   def casual = !rated
 
@@ -211,17 +132,8 @@ case class Game(
 
   def finishedOrAborted = finished || aborted
 
-  def accountable = playedTurns >= 2 || isTournament
-
-  def replayable = finished || (aborted && bothPlayersHaveMoved)
-
-  def analysable =
-    replayable && playedTurns > 4 &&
-      Game.analysableVariants(variant) &&
-      !Game.isOldHorde(this)
-
   def ratingVariant =
-    if (isTournament && variant == chess.variant.FromPosition) chess.variant.Standard
+    if (metadata.tournamentId.isDefined && variant == chess.variant.FromPosition) chess.variant.Standard
     else variant
 
   def fromPosition = variant == chess.variant.FromPosition || source.contains(Source.Position)
@@ -248,8 +160,6 @@ case class Game(
   def drawn = finished && winner.isEmpty
 
   def isCorrespondence = speed == chess.Speed.Correspondence
-
-  def isSwitchable = nonAi && (isCorrespondence || isSimul)
 
   def hasClock = clock.isDefined
 

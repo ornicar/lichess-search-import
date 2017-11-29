@@ -30,32 +30,6 @@ object BSONHandlers {
     }
   }
 
-  private[game] implicit val crazyhouseDataBSONHandler = new BSON[Crazyhouse.Data] {
-
-    import Crazyhouse._
-
-    def reads(r: BSON.Reader) = Crazyhouse.Data(
-      pockets = {
-      val (white, black) = {
-        r.str("p").flatMap(chess.Piece.fromChar)(breakOut): List[chess.Piece]
-      }.partition(_ is chess.White)
-      Pockets(
-        white = Pocket(white.map(_.role)),
-        black = Pocket(black.map(_.role))
-      )
-    },
-      promoted = r.str("t").flatMap(chess.Pos.piotr)(breakOut)
-    )
-
-    def writes(w: BSON.Writer, o: Crazyhouse.Data) = BSONDocument(
-      "p" -> {
-        o.pockets.white.roles.map(_.forsythUpper).mkString +
-          o.pockets.black.roles.map(_.forsyth).mkString
-      },
-      "t" -> o.promoted.map(_.piotr).mkString
-    )
-  }
-
   implicit val gameBSONHandler: BSON[Game] = new BSON[Game] {
 
     import Game.BSONFields._
@@ -78,16 +52,10 @@ object BSONHandlers {
         id = r str id,
         whitePlayer = player(whitePlayer, White, whiteId, whiteUid),
         blackPlayer = player(blackPlayer, Black, blackId, blackUid),
-        binaryPgn = r bytesD binaryPgn,
         status = r.get[Status](status),
         turns = r int turns,
         startedAtTurn = r intD startedAtTurn,
-        checkCount = {
-          val counts = r.intsD(checkCount)
-          CheckCount(counts.headOption getOrElse 0, counts.lastOption getOrElse 0)
-        },
         daysPerTurn = r intO daysPerTurn,
-        binaryMoveTimes = r bytesO moveTimes,
         mode = Mode(r boolD rated),
         variant = Variant(r intD variant) | chess.variant.Standard,
         createdAt = r date createdAt,
@@ -95,23 +63,13 @@ object BSONHandlers {
         metadata = Metadata(
           source = r intO source flatMap Source.apply,
           tournamentId = r strO tournamentId,
-          simulId = r strO simulId,
           analysed = r boolD analysed
         )
       )
 
       val gameClock = r.getO[Color => Clock](clock)(clockBSONReader(g.createdAt, g.whitePlayer.berserk, g.blackPlayer.berserk)) map (_(g.turnColor))
 
-      g.copy(
-        clock = gameClock,
-        crazyData = if(g.variant == Crazyhouse) Some(r.get[Crazyhouse.Data](crazyData)) else None,
-        clockHistory = for {
-        clk <- gameClock
-        bw <- r bytesO whiteClockHistory
-        bb <- r bytesO blackClockHistory
-        history <- BinaryFormat.clockHistory.read(clk.limit, bw, bb, g.flagged, g.id)
-      } yield history
-      )
+      g.copy(clock = gameClock)
     }
 
     def writes(w: BSON.Writer, o: Game) = ???
@@ -120,7 +78,7 @@ object BSONHandlers {
   implicit val gameWithAnalysedBSONHandler: BSON[Game.WithAnalysed] = new BSON[Game.WithAnalysed] {
     def reads(r: BSON.Reader): Game.WithAnalysed = {
       Game.WithAnalysed(
-        gameBSONHandler.reads(r), 
+        gameBSONHandler.reads(r),
         r boolD Game.BSONFields.analysed)
     }
 

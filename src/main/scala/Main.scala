@@ -20,14 +20,10 @@ import play.api.libs.json._
 import play.api.libs.ws._
 import play.api.libs.ws.ahc._
 
-import chess.format.pgn.Pgn
 import chess.variant.{ Standard, Horde, Variant }
 import lichess.DB.BSONDateTimeHandler
-import lila.analyse.Analysis
-import lila.analyse.Analysis.analysisBSONHandler
 import lila.game.BSONHandlers._
-import lila.game.BSONHandlers._
-import lila.game.{ Game, PgnDump, Source => S }
+import lila.game.{ Game }
 
 object Main extends App {
 
@@ -84,7 +80,15 @@ object Main extends App {
       case (db, dbClose) =>
 
         val gameSource = db.gameColl
-          .find(BSONDocument("ca" -> BSONDocument("$gt" -> since)))
+          .find(
+            BSONDocument("ca" -> BSONDocument("$gt" -> since)),
+            BSONDocument(
+              Game.BSONFields.binaryPgn -> false,
+              Game.BSONFields.moveTimes -> false,
+              Game.BSONFields.whiteClockHistory -> false,
+              Game.BSONFields.blackClockHistory -> false
+            )
+          )
           .sort(BSONDocument("ca" -> 1))
           .cursor[Game.WithAnalysed](readPreference = ReadPreference.secondaryPreferred)
           .documentSource(maxDocs = Int.MaxValue)
@@ -99,7 +103,7 @@ object Main extends App {
           .merge(tickSource, eagerComplete = true)
           .via(Reporter)
           .grouped(1000)
-          .mapAsyncUnordered(6) { games =>
+          .mapAsyncUnordered(5) { games =>
             val payload = JsObject(games map {
               case Game.WithAnalysed(g, a) => g.id -> JsString(Json.stringify(search.toDoc(g, a)))
             })
