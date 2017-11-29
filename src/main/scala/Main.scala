@@ -92,23 +92,17 @@ object Main extends App {
         val tickSource =
           Source.tick(Reporter.freq, Reporter.freq, None)
 
-        def jsonBatch(entries: Seq[(String, JsObject)]) = JsObject(entries map {
-          case (id, doc) => id -> JsString(Json.stringify(doc))
-        })
-
         gameSource
           .buffer(10000, OverflowStrategy.backpressure)
           .map(g => Some(g))
           .merge(tickSource, eagerComplete = true)
           .via(Reporter)
-          .map {
-            case Game.WithAnalysed(g, a) => g.id -> search.toDoc(g, a)
-          }
           .grouped(1000)
-          .map(jsonBatch)
-          .async
-          .mapAsyncUnordered(2) { batch =>
-            retry(search.store(batch), 10 seconds, 20)
+          .mapAsyncUnordered(4) { games =>
+            val payload = JsObject(games map {
+              case Game.WithAnalysed(g, a) => g.id -> JsString(Json.stringify(search.toDoc(g, a)))
+            })
+            retry(search.store(payload), 10 seconds, 20)
           }
           .runWith(Sink.ignore) andThen {
             case state =>
