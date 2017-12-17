@@ -21,6 +21,7 @@ final class Search(
     val perf = "p"
     val uids = "u"
     val winner = "w"
+    val loser = "o"
     val winnerColor = "c"
     val averageRating = "a"
     val ai = "i"
@@ -51,7 +52,8 @@ final class Search(
       Fields.rated -> game.rated,
       Fields.perf -> game.perfType.map(_.id),
       Fields.uids -> Some(game.userIds.toArray).filterNot(_.isEmpty),
-      Fields.winner -> (game.winner flatMap (_.userId)),
+      Fields.winner -> game.winner.flatMap(_.userId),
+      Fields.loser -> game.loser.flatMap(_.userId),
       Fields.winnerColor -> game.winner.fold(3)(_.color.fold(1, 2)),
       Fields.averageRating -> game.averageUsersRating,
       Fields.ai -> game.aiLevel,
