@@ -81,9 +81,14 @@ object Main extends App {
 
         val gameSource = db.gameColl
           .find(
-            BSONDocument("ca" -> BSONDocument("$gt" -> since)),
             BSONDocument(
-              Game.BSONFields.binaryPgn -> false,
+              "ca" -> BSONDocument("$gt" -> since),
+              "s" -> BSONDocument("$gte" -> chess.Status.Mate.id)
+            ),
+            BSONDocument(
+              Game.BSONFields.oldPgn -> false,
+              Game.BSONFields.huffmanPgn -> false,
+              Game.BSONFields.binaryPieces -> false,
               Game.BSONFields.moveTimes -> false,
               Game.BSONFields.whiteClockHistory -> false,
               Game.BSONFields.blackClockHistory -> false
