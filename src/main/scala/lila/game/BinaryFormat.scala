@@ -1,8 +1,6 @@
 package lila.game
 
 import org.joda.time.DateTime
-import scala.collection.breakOut
-import scala.collection.breakOut
 import scala.collection.Searching._
 import scala.util.Try
 
@@ -31,31 +29,37 @@ object BinaryFormat {
     def writeSide(start: Centis, times: Vector[Centis], flagged: Boolean) = ???
 
     def readSide(start: Centis, ba: ByteArray, flagged: Boolean) = {
-      val decoded: Vector[Centis] = ClockEncoder.decode(ba.value, start.centis).map(Centis.apply)(breakOut)
+      val decoded: Vector[Centis] =
+        ClockEncoder.decode(ba.value, start.centis).view.map(Centis.apply).toVector
       if (flagged) decoded :+ Centis(0) else decoded
     }
 
-    def read(start: Centis, bw: ByteArray, bb: ByteArray, flagged: Option[Color], gameId: String) = Try {
-      ClockHistory(
-        readSide(start, bw, flagged contains White),
-        readSide(start, bb, flagged contains Black)
+    def read(start: Centis, bw: ByteArray, bb: ByteArray, flagged: Option[Color], gameId: String) =
+      Try {
+        ClockHistory(
+          readSide(start, bw, flagged contains White),
+          readSide(start, bb, flagged contains Black)
+        )
+      }.fold(
+        e => { println(s"Exception decoding history on game $gameId", e); none },
+        some
       )
-    }.fold(
-      e => { println(s"Exception decoding history on game $gameId", e); none },
-      some
-    )
   }
 
   object moveTime {
 
     private type MT = Int // centiseconds
     private val size = 16
-    private val buckets = List(10, 50, 100, 150, 200, 300, 400, 500, 600, 800, 1000, 1500, 2000, 3000, 4000, 6000)
-    private val encodeCutoffs = buckets zip buckets.tail map {
-      case (i1, i2) => (i1 + i2) / 2
-    } toVector
+    private val buckets =
+      List(10, 50, 100, 150, 200, 300, 400, 500, 600, 800, 1000, 1500, 2000, 3000, 4000, 6000)
+    private val encodeCutoffs = buckets
+      .zip(buckets.tail)
+      .map {
+        case (i1, i2) => (i1 + i2) / 2
+      }
+      .toVector
 
-    private val decodeMap: Map[Int, MT] = buckets.zipWithIndex.map(x => x._2 -> x._1)(breakOut)
+    private val decodeMap: Map[Int, MT] = buckets.zipWithIndex.map(x => x._2 -> x._1).toMap
 
     def write(mts: Vector[Centis]): ByteArray = ???
 
@@ -64,7 +68,7 @@ object BinaryFormat {
       ba.value map toInt flatMap { k =>
         Array(dec(k >> 4), dec(k & 15))
       }
-    }.take(turns).map(Centis.apply)(breakOut)
+    }.take(turns).view.map(Centis.apply).toVector
   }
 
   case class clock(start: Timestamp) {
@@ -83,40 +87,42 @@ object BinaryFormat {
 
     def write(clock: Clock): ByteArray = ???
 
-    def read(ba: ByteArray, whiteBerserk: Boolean, blackBerserk: Boolean): Color => Clock = color => {
-      val ia = ba.value map toInt
+    def read(ba: ByteArray, whiteBerserk: Boolean, blackBerserk: Boolean): Color => Clock =
+      color => {
+        val ia = ba.value map toInt
 
-      // ba.size might be greater than 12 with 5 bytes timers
-      // ba.size might be 8 if there was no timer.
-      // #TODO remove 5 byte timer case! But fix the DB first!
-      val timer = {
-        if (ia.size == 12) readTimer(readInt(ia(8), ia(9), ia(10), ia(11)))
-        else None
-      }
-
-      ia match {
-        case Array(b1, b2, b3, b4, b5, b6, b7, b8, _*) => {
-          val config = Clock.Config(readClockLimit(b1), b2)
-          val legacyWhite = Centis(readSignedInt24(b3, b4, b5))
-          val legacyBlack = Centis(readSignedInt24(b6, b7, b8))
-          Clock(
-            config = config,
-            color = color,
-            players = Color.Map(
-              ClockPlayer
-                .withConfig(config)
-                .copy(berserk = whiteBerserk)
-                .setRemaining(computeRemaining(config, legacyWhite)),
-              ClockPlayer.withConfig(config)
-                .copy(berserk = blackBerserk)
-                .setRemaining(computeRemaining(config, legacyBlack))
-            ),
-            timer = timer
-          )
+        // ba.size might be greater than 12 with 5 bytes timers
+        // ba.size might be 8 if there was no timer.
+        // #TODO remove 5 byte timer case! But fix the DB first!
+        val timer = {
+          if (ia.size == 12) readTimer(readInt(ia(8), ia(9), ia(10), ia(11)))
+          else None
         }
-        case _ => sys error s"BinaryFormat.clock.read invalid bytes: ${ba.showBytes}"
+
+        ia match {
+          case Array(b1, b2, b3, b4, b5, b6, b7, b8, _*) => {
+            val config      = Clock.Config(readClockLimit(b1), b2)
+            val legacyWhite = Centis(readSignedInt24(b3, b4, b5))
+            val legacyBlack = Centis(readSignedInt24(b6, b7, b8))
+            Clock(
+              config = config,
+              color = color,
+              players = Color.Map(
+                ClockPlayer
+                  .withConfig(config)
+                  .copy(berserk = whiteBerserk)
+                  .setRemaining(computeRemaining(config, legacyWhite)),
+                ClockPlayer
+                  .withConfig(config)
+                  .copy(berserk = blackBerserk)
+                  .setRemaining(computeRemaining(config, legacyBlack))
+              ),
+              timer = timer
+            )
+          }
+          case _ => sys error s"BinaryFormat.clock.read invalid bytes: ${ba.showBytes}"
+        }
       }
-    }
 
     private def writeTimer(timer: Timestamp) = {
       val centis = (timer - start).centis
@@ -153,11 +159,11 @@ object BinaryFormat {
     def apply(start: DateTime) = new clock(Timestamp(start.getMillis))
   }
 
-  object castleLastMoveTime {
+  object castleLastMove {
 
-    def write(clmt: CastleLastMoveTime): ByteArray = ???
+    def write(clmt: CastleLastMove): ByteArray = ???
 
-    def read(ba: ByteArray): CastleLastMoveTime = {
+    def read(ba: ByteArray): CastleLastMove = {
       val ints = ba.value map toInt
       val size = ints.size
 
@@ -170,11 +176,11 @@ object BinaryFormat {
     private def posAt(x: Int, y: Int) = Pos.posAt(x + 1, y + 1)
 
     private def doRead(b1: Int, b2: Int, checkByte: Option[Int]) =
-      CastleLastMoveTime(
+      CastleLastMove(
         castles = Castles(b1 > 127, (b1 & 64) != 0, (b1 & 32) != 0, (b1 & 16) != 0),
         lastMove = for {
-          from ← posAt((b1 & 15) >> 1, ((b1 & 1) << 2) + (b2 >> 6))
-          to ← posAt((b2 & 63) >> 3, b2 & 7)
+          from <- posAt((b1 & 15) >> 1, ((b1 & 1) << 2) + (b2 >> 6))
+          to   <- posAt((b2 & 63) >> 3, b2 & 7)
           if from != Pos.A1 || to != Pos.A1
         } yield from -> to,
         check = checkByte flatMap { x => posAt(x >> 3, x & 7) }
@@ -183,44 +189,49 @@ object BinaryFormat {
 
   object piece {
 
-    private val groupedPos = Pos.all grouped 2 collect {
-      case List(p1, p2) => (p1, p2)
-    } toArray
+    private val groupedPos = Pos.all
+      .grouped(2)
+      .collect {
+        case List(p1, p2) => (p1, p2)
+      }
+      .toArray
 
     def write(pieces: PieceMap): ByteArray = ???
 
     def read(ba: ByteArray, variant: Variant): PieceMap = {
       def splitInts(b: Byte) = {
         val int = b.toInt
-        Array(int >> 4, int & 0x0F)
+        Array(int >> 4, int & 0x0f)
       }
       def intPiece(int: Int): Option[Piece] =
         intToRole(int & 7, variant) map { role => Piece(Color((int & 8) == 0), role) }
       val pieceInts = ba.value flatMap splitInts
       (Pos.all zip pieceInts).flatMap {
         case (pos, int) => intPiece(int) map (pos -> _)
-      }(breakOut)
+      }.toMap
     }
 
-    private def intToRole(int: Int, variant: Variant): Option[Role] = int match {
-      case 6 => Some(Pawn)
-      case 1 => Some(King)
-      case 2 => Some(Queen)
-      case 3 => Some(Rook)
-      case 4 => Some(Knight)
-      case 5 => Some(Bishop)
-      // Legacy from when we used to have an 'Antiking' piece
-      case 7 if variant.antichess => Some(King)
-      case _ => None
-    }
-    private def roleToInt(role: Role): Int = role match {
-      case Pawn => 6
-      case King => 1
-      case Queen => 2
-      case Rook => 3
-      case Knight => 4
-      case Bishop => 5
-    }
+    private def intToRole(int: Int, variant: Variant): Option[Role] =
+      int match {
+        case 6 => Some(Pawn)
+        case 1 => Some(King)
+        case 2 => Some(Queen)
+        case 3 => Some(Rook)
+        case 4 => Some(Knight)
+        case 5 => Some(Bishop)
+        // Legacy from when we used to have an 'Antiking' piece
+        case 7 if variant.antichess => Some(King)
+        case _                      => None
+      }
+    private def roleToInt(role: Role): Int =
+      role match {
+        case Pawn   => 6
+        case King   => 1
+        case Queen  => 2
+        case Rook   => 3
+        case Knight => 4
+        case Bishop => 5
+      }
   }
 
   object unmovedRooks {
@@ -233,22 +244,24 @@ object BinaryFormat {
 
     private val arrIndexes = 0 to 1
     private val bitIndexes = 0 to 7
-    private val whiteStd = Set(Pos.A1, Pos.H1)
-    private val blackStd = Set(Pos.A8, Pos.H8)
+    private val whiteStd   = Set(Pos.A1, Pos.H1)
+    private val blackStd   = Set(Pos.A8, Pos.H8)
 
-    def read(ba: ByteArray) = UnmovedRooks {
-      var set = Set.empty[Pos]
-      arrIndexes.foreach { i =>
-        val int = ba.value(i).toInt
-        if (int != 0) {
-          if (int == -127) set = if (i == 0) whiteStd else set ++ blackStd
-          else bitIndexes.foreach { j =>
-            if (bitAt(int, j) == 1) set = set + Pos.posAt(8 - j, 1 + 7 * i).get
+    def read(ba: ByteArray) =
+      UnmovedRooks {
+        var set = Set.empty[Pos]
+        arrIndexes.foreach { i =>
+          val int = ba.value(i).toInt
+          if (int != 0) {
+            if (int == -127) set = if (i == 0) whiteStd else set ++ blackStd
+            else
+              bitIndexes.foreach { j =>
+                if (bitAt(int, j) == 1) set = set + Pos.posAt(8 - j, 1 + 7 * i).get
+              }
           }
         }
+        set
       }
-      set
-    }
   }
 
   @inline private def toInt(b: Byte): Int = b & 0xff
@@ -271,9 +284,13 @@ object BinaryFormat {
     if (i > int23Max) int23Max - i else i
   }
 
-  def writeInt(i: Int) = Array(
-    (i >>> 24).toByte, (i >>> 16).toByte, (i >>> 8).toByte, i.toByte
-  )
+  def writeInt(i: Int) =
+    Array(
+      (i >>> 24).toByte,
+      (i >>> 16).toByte,
+      (i >>> 8).toByte,
+      i.toByte
+    )
 
   def readInt(b1: Int, b2: Int, b3: Int, b4: Int) = {
     (b1 << 24) | (b2 << 16) | (b3 << 8) | b4
