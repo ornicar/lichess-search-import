@@ -9,6 +9,7 @@ libraryDependencies += "org.reactivemongo"  % "reactivemongo-shaded-native" % "0
 libraryDependencies += "org.scalaz" %% "scalaz-core" % "7.2.30"
 libraryDependencies += "com.github.ornicar" %% "scalalib" % "6.8"
 libraryDependencies += "org.lichess" %% "scalachess" % "9.3.1"
+libraryDependencies += "com.typesafe.akka" %% "akka-stream" % "2.6.5"
 libraryDependencies += "com.typesafe.akka" %% "akka-slf4j" % "2.6.5"
 libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.2.3"
 libraryDependencies += "joda-time" % "joda-time" % "2.10.6"

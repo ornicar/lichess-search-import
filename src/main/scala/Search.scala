@@ -74,11 +74,11 @@ final class Search(wsClient: StandaloneAhcWSClient, endpoint: String)(implicit e
       }
     }
 
-  def putMapping: Future[Unit] = HTTP(s"mapping/game/game", Json.obj())
+  def putMapping: Future[Unit] = HTTP("mapping/game", Json.obj())
 
-  def store(obj: JsObject): Future[Unit] = HTTP(s"store/bulk/game/game", obj)
+  def store(obj: JsObject): Future[Unit] = HTTP("store/bulk/game", obj)
 
-  def refresh: Future[Unit] = HTTP(s"refresh/game", Json.obj())
+  def refresh: Future[Unit] = HTTP("refresh/game", Json.obj())
 
   private def HTTP[D: Writes, R](url: String, data: D, read: String => R): Future[R] =
     wsClient.url(s"$endpoint/$url").post(Json toJson data) flatMap {
