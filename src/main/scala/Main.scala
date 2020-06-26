@@ -92,7 +92,7 @@ object Main extends App {
           )
         )
         .sort(BSONDocument("ca" -> 1))
-        .cursor[Game.WithAnalysed](readPreference = ReadPreference.secondaryPreferred)
+        .cursor[Game.WithAnalysed](readPreference = ReadPreference.secondary)
         .documentSource(maxDocs = Int.MaxValue)
       // .documentSource(maxDocs = 100000)
 
@@ -100,12 +100,12 @@ object Main extends App {
         Source.tick(Reporter.freq, Reporter.freq, None)
 
       gameSource
-        .buffer(10000, OverflowStrategy.backpressure)
+        .buffer(20000, OverflowStrategy.backpressure)
         .map(g => Some(g))
         .merge(tickSource, eagerComplete = true)
         .via(Reporter)
         .grouped(1000)
-        .mapAsyncUnordered(5) { games =>
+        .mapAsyncUnordered(10) { games =>
           val payload = JsObject(games map {
             case Game.WithAnalysed(g, a) =>
               g.id -> JsString(Json.stringify(search.toDoc(g, a)))
