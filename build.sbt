@@ -1,4 +1,4 @@
-scalaVersion := "2.13.2"
+scalaVersion := "2.13.3"
 name := "lichess-search-import"
 organization := "org.lichess"
 version := "2.0"
